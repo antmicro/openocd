@@ -95,6 +95,9 @@ struct riscv_info {
 	struct command_context *cmd_ctx;
 	void *version_specific;
 
+    /* Do not require the core to be halted. This is a hack */
+    int nohalt;
+
 	/* The hart that is currently being debugged.  Note that this is
 	 * different than the hartid that the RTOS is expected to use.  This
 	 * one will change all the time, it's more of a global argument to

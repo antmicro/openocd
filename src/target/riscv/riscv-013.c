@@ -1716,7 +1716,7 @@ static int examine(struct target *target)
 		return ERROR_FAIL;
 
 	bool halted = riscv_is_halted(target);
-	if (!halted) {
+	if (!halted && !r->nohalt) {
 		if (riscv013_halt_go(target) != ERROR_OK) {
 			LOG_ERROR("Fatal: Hart %d failed to halt during examine()", r->current_hartid);
 			return ERROR_FAIL;
@@ -1727,16 +1727,20 @@ static int examine(struct target *target)
 		* program buffer. */
 	r->debug_buffer_size = info->progbufsize;
 
-	int result = register_read_abstract(target, NULL, GDB_REGNO_S0, 64);
-	if (result == ERROR_OK)
-		r->xlen = 64;
-	else
-		r->xlen = 32;
+    if (r->xlen != 32 && r->xlen != 64) {
+		int result = register_read_abstract(target, NULL, GDB_REGNO_S0, 64);
+	    if (result == ERROR_OK)
+			r->xlen = 64;
+	    else
+		    r->xlen = 32;
+    }
 
-	if (register_read(target, &r->misa, GDB_REGNO_MISA)) {
-		LOG_ERROR("Fatal: Failed to read MISA from hart %d.", r->current_hartid);
-		return ERROR_FAIL;
-	}
+    if (r->misa == 0) {
+		if (register_read(target, &r->misa, GDB_REGNO_MISA)) {
+			LOG_ERROR("Fatal: Failed to read MISA from hart %d.", r->current_hartid);
+			return ERROR_FAIL;
+		}
+    }
 
 	if (riscv_supports_extension(target, 'V')) {
 		if (discover_vlenb(target) != ERROR_OK)
@@ -1752,7 +1756,7 @@ static int examine(struct target *target)
 	LOG_DEBUG(" hart %d: XLEN=%d, misa=0x%" PRIx64, r->current_hartid, r->xlen,
 			r->misa);
 
-	if (!halted)
+	if (!halted && !r->nohalt)
 		riscv013_step_or_resume_current_hart(target, false, false);
 
 	target_set_examined(target);
@@ -4287,28 +4291,32 @@ static int riscv013_on_halt(struct target *target)
 
 static bool riscv013_is_halted(struct target *target)
 {
+	RISCV_INFO(r);
 	uint32_t dmstatus;
 	if (dmstatus_read(target, &dmstatus, true) != ERROR_OK)
 		return false;
-	if (get_field(dmstatus, DM_DMSTATUS_ANYUNAVAIL))
-		LOG_ERROR("Hart %d is unavailable.", riscv_current_hartid(target));
-	if (get_field(dmstatus, DM_DMSTATUS_ANYNONEXISTENT))
-		LOG_ERROR("Hart %d doesn't exist.", riscv_current_hartid(target));
-	if (get_field(dmstatus, DM_DMSTATUS_ANYHAVERESET)) {
-		int hartid = riscv_current_hartid(target);
-		LOG_INFO("Hart %d unexpectedly reset!", hartid);
-		/* TODO: Can we make this more obvious to eg. a gdb user? */
-		uint32_t dmcontrol = DM_DMCONTROL_DMACTIVE |
-			DM_DMCONTROL_ACKHAVERESET;
-		dmcontrol = set_hartsel(dmcontrol, hartid);
-		/* If we had been halted when we reset, request another halt. If we
-		 * ended up running out of reset, then the user will (hopefully) get a
-		 * message that a reset happened, that the target is running, and then
-		 * that it is halted again once the request goes through.
-		 */
-		if (target->state == TARGET_HALTED)
-			dmcontrol |= DM_DMCONTROL_HALTREQ;
-		dmi_write(target, DM_DMCONTROL, dmcontrol);
+	if (!r->nohalt)
+	{
+		if (get_field(dmstatus, DM_DMSTATUS_ANYUNAVAIL))
+			LOG_ERROR("Hart %d is unavailable.", riscv_current_hartid(target));
+		if (get_field(dmstatus, DM_DMSTATUS_ANYNONEXISTENT))
+			LOG_ERROR("Hart %d doesn't exist.", riscv_current_hartid(target));
+		if (get_field(dmstatus, DM_DMSTATUS_ANYHAVERESET)) {
+			int hartid = riscv_current_hartid(target);
+			LOG_INFO("Hart %d unexpectedly reset!", hartid);
+			/* TODO: Can we make this more obvious to eg. a gdb user? */
+			uint32_t dmcontrol = DM_DMCONTROL_DMACTIVE |
+				DM_DMCONTROL_ACKHAVERESET;
+			dmcontrol = set_hartsel(dmcontrol, hartid);
+			/* If we had been halted when we reset, request another halt. If we
+			 * ended up running out of reset, then the user will (hopefully) get a
+			 * message that a reset happened, that the target is running, and then
+			 * that it is halted again once the request goes through.
+			 */
+			if (target->state == TARGET_HALTED)
+				dmcontrol |= DM_DMCONTROL_HALTREQ;
+			dmi_write(target, DM_DMCONTROL, dmcontrol);
+		}
 	}
 	return get_field(dmstatus, DM_DMSTATUS_ALLHALTED);
 }

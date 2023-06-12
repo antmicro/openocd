@@ -2834,6 +2834,47 @@ COMMAND_HANDLER(riscv_set_ebreaku)
 	return ERROR_OK;
 }
 
+COMMAND_HANDLER(riscv_set_xlen)
+{
+	struct target *target = get_current_target(CMD_CTX);
+	RISCV_INFO(r);
+
+	if (CMD_ARGC != 1) {
+		LOG_ERROR("Command takes exactly 1 parameter");
+		return ERROR_COMMAND_SYNTAX_ERROR;
+	}
+	COMMAND_PARSE_NUMBER(int, CMD_ARGV[0], r->xlen);
+	return ERROR_OK;
+}
+
+COMMAND_HANDLER(riscv_set_misa)
+{
+	struct target *target = get_current_target(CMD_CTX);
+	RISCV_INFO(r);
+    int misa = 0;
+
+	if (CMD_ARGC != 1) {
+		LOG_ERROR("Command takes exactly 1 parameter");
+		return ERROR_COMMAND_SYNTAX_ERROR;
+	}
+	COMMAND_PARSE_NUMBER(int, CMD_ARGV[0], misa);
+    r->misa = misa;
+	return ERROR_OK;
+}
+
+COMMAND_HANDLER(riscv_set_nohalt)
+{
+	struct target *target = get_current_target(CMD_CTX);
+	RISCV_INFO(r);
+
+	if (CMD_ARGC != 1) {
+		LOG_ERROR("Command takes exactly 1 parameter");
+		return ERROR_COMMAND_SYNTAX_ERROR;
+	}
+	COMMAND_PARSE_ON_OFF(CMD_ARGV[0], r->nohalt);
+	return ERROR_OK;
+}
+
 COMMAND_HELPER(riscv_print_info_line, const char *section, const char *key,
 			   unsigned int value)
 {
@@ -3017,6 +3058,28 @@ static const struct command_registration riscv_exec_command_handlers[] = {
 		.help = "Control dcsr.ebreaku. When off, U-mode ebreak instructions "
 			"don't trap to OpenOCD. Defaults to on."
 	},
+	{
+		.name = "set_xlen",
+		.handler = riscv_set_xlen,
+		.mode = COMMAND_CONFIG,
+		.usage = "[xlen]",
+		.help = "Manually provide XLEN"
+	},
+	{
+		.name = "set_misa",
+		.handler = riscv_set_misa,
+		.mode = COMMAND_CONFIG,
+		.usage = "[misa]",
+		.help = "Manually provide ISA as per 'misa' CSR content definition"
+	},
+	{
+		.name = "set_nohalt",
+		.handler = riscv_set_nohalt,
+		.mode = COMMAND_CONFIG,
+		.usage = "on|off",
+		.help = "Forcibly disable implicit target halting during examination. "
+            "Requires XLEN and misa to be set manually."
+	},
 	COMMAND_REGISTRATION_DONE
 };
 
@@ -3130,6 +3193,8 @@ static void riscv_info_init(struct target *target, struct riscv_info *r)
 	memset(r->trigger_unique_id, 0xff, sizeof(r->trigger_unique_id));
 
 	r->xlen = -1;
+    r->misa = 0;
+    r->nohalt = 0;
 
 	r->mem_access_methods[0] = RISCV_MEM_ACCESS_PROGBUF;
 	r->mem_access_methods[1] = RISCV_MEM_ACCESS_SYSBUS;
